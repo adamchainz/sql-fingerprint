@@ -22,11 +22,13 @@
 //! * Savepoint IDs are replaced with 's1', 's2', etc.
 use sqlparser::ast::{
     Expr, Ident, OrderBy, OrderByKind, Query, SelectItem, SetExpr, Statement, Value, ValueWithSpan,
+    VisitMut, VisitorMut,
 };
 use sqlparser::dialect::{Dialect, GenericDialect};
 use sqlparser::parser::Parser;
 use sqlparser::tokenizer::Span;
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 
 /// Fingerprint a single SQL string.
 ///
@@ -53,109 +55,127 @@ pub fn fingerprint_one(input: &str, dialect: Option<&dyn Dialect>) -> String {
 /// ```
 pub fn fingerprint_many(input: Vec<&str>, dialect: Option<&dyn Dialect>) -> Vec<String> {
     let dialect = dialect.unwrap_or(&GenericDialect {});
-    let mut savepoint_simple_ids: HashMap<String, String> = HashMap::new();
+
+    let mut savepoint_visitor = SavepointVisitor::new();
+
     input
         .iter()
         .map(|sql| {
-            let ast = Parser::parse_sql(dialect, sql).unwrap();
+            let mut ast = Parser::parse_sql(dialect, sql).unwrap();
+
+            for stmt in &mut ast {
+                stmt.visit(&mut savepoint_visitor);
+            }
+
             ast.into_iter()
-                .map(|mut stmt| simplify_statement(&mut stmt, &mut savepoint_simple_ids))
+                .map(|stmt| stmt.to_string())
                 .collect::<Vec<_>>()
                 .join(" ")
         })
         .collect()
 }
 
-fn simplify_statement(
-    stmt: &mut Statement,
-    savepoint_simple_ids: &mut HashMap<String, String>,
-) -> String {
-    match stmt {
-        Statement::Savepoint { name } => {
-            let savepoint_id = format!("s{}", savepoint_simple_ids.len() + 1);
-            savepoint_simple_ids.insert(name.value.clone(), savepoint_id.clone());
-            *name = Ident::new(savepoint_id);
-        }
-        Statement::ReleaseSavepoint { name } => {
-            let savepoint_id = savepoint_simple_ids.get(&name.value).unwrap().clone();
-            *name = Ident::new(savepoint_id);
-        }
-        Statement::Rollback {
-            savepoint: Some(name),
-            ..
-        } => {
-            let savepoint_id = savepoint_simple_ids.get(&name.value).unwrap().clone();
-            *name = Ident::new(savepoint_id);
-        }
-        Statement::Query(query) => {
-            simplify_query(query);
-        }
-        Statement::Declare { stmts } => {
-            for stmt in stmts {
-                if stmt.names.len() > 0 {
-                    stmt.names = vec![Ident::new("...")];
-                }
-                if let Some(for_query) = &mut stmt.for_query {
-                    simplify_query(for_query);
-                }
-            }
-        }
-        Statement::Insert(insert) => {
-            if insert.columns.len() > 0 {
-                insert.columns = vec![Ident::new("...")];
-            }
-            if let Some(source) = &mut insert.source {
-                if let SetExpr::Values(values) = source.as_mut().body.as_mut() {
-                    values.rows = vec![vec![Expr::Value(ValueWithSpan {
-                        value: Value::Placeholder("...".to_string()),
-                        span: Span::empty(),
-                    })]];
-                }
-            }
-            if let Some(returning) = &mut insert.returning {
-                if returning.len() > 0 {
-                    *returning = vec![SelectItem::UnnamedExpr(Expr::Value(ValueWithSpan {
-                        value: Value::Placeholder("...".to_string()),
-                        span: Span::empty(),
-                    }))];
-                }
-            }
-        }
-        _ => {}
-    }
-    stmt.to_string()
+struct SavepointVisitor {
+    savepoint_ids: HashMap<String, String>,
 }
 
-fn simplify_query(query: &mut Query) {
-    if let SetExpr::Select(select) = query.body.as_mut() {
-        if select.projection.len() > 0 {
-            if let Some(item) = select.projection.first_mut() {
-                match item {
-                    SelectItem::UnnamedExpr(_) | SelectItem::ExprWithAlias { .. } => {
-                        *item = SelectItem::UnnamedExpr(Expr::Value(ValueWithSpan {
-                            value: Value::Placeholder("...".to_string()),
-                            span: Span::empty(),
-                        }));
-                    }
-                    _ => {}
-                }
-            }
-            select.projection.truncate(1);
+impl SavepointVisitor {
+    fn new() -> Self {
+        SavepointVisitor {
+            savepoint_ids: HashMap::new(),
         }
     }
-    if let Some(order_by) = &mut query.order_by {
-        let OrderBy { kind, .. } = order_by;
-        if let OrderByKind::Expressions(expressions) = kind {
-            if expressions.len() > 0 {
-                if let Some(expr) = expressions.first_mut() {
-                    expr.expr = Expr::Value(ValueWithSpan {
-                        value: Value::Placeholder("...".to_string()),
-                        span: Span::empty(),
-                    });
+}
+
+impl VisitorMut for SavepointVisitor {
+    type Break = ();
+
+    fn pre_visit_statement(&mut self, stmt: &mut Statement) -> ControlFlow<Self::Break> {
+        match stmt {
+            Statement::Savepoint { name } => {
+                let savepoint_id = format!("s{}", self.savepoint_ids.len() + 1);
+                self.savepoint_ids
+                    .insert(name.value.clone(), savepoint_id.clone());
+                *name = Ident::new(savepoint_id);
+            }
+            Statement::ReleaseSavepoint { name } => {
+                if let Some(savepoint_id) = self.savepoint_ids.get(&name.value).cloned() {
+                    *name = Ident::new(savepoint_id);
                 }
-                expressions.truncate(1);
+            }
+            Statement::Rollback {
+                savepoint: Some(name),
+                ..
+            } => {
+                if let Some(savepoint_id) = self.savepoint_ids.get(&name.value).cloned() {
+                    *name = Ident::new(savepoint_id);
+                }
+            }
+            Statement::Declare { stmts } => {
+                for stmt in stmts {
+                    if stmt.names.len() > 0 {
+                        stmt.names = vec![Ident::new("...")];
+                    }
+                }
+            }
+            Statement::Insert(insert) => {
+                if insert.columns.len() > 0 {
+                    insert.columns = vec![Ident::new("...")];
+                }
+                if let Some(source) = &mut insert.source {
+                    if let SetExpr::Values(values) = source.as_mut().body.as_mut() {
+                        values.rows = vec![vec![Expr::Value(ValueWithSpan {
+                            value: Value::Placeholder("...".to_string()),
+                            span: Span::empty(),
+                        })]];
+                    }
+                }
+                if let Some(returning) = &mut insert.returning {
+                    if returning.len() > 0 {
+                        *returning = vec![SelectItem::UnnamedExpr(Expr::Value(ValueWithSpan {
+                            value: Value::Placeholder("...".to_string()),
+                            span: Span::empty(),
+                        }))];
+                    }
+                }
+            }
+            _ => {}
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_query(&mut self, query: &mut Query) -> ControlFlow<Self::Break> {
+        if let SetExpr::Select(select) = query.body.as_mut() {
+            if select.projection.len() > 0 {
+                if let Some(item) = select.projection.first_mut() {
+                    match item {
+                        SelectItem::UnnamedExpr(_) | SelectItem::ExprWithAlias { .. } => {
+                            *item = SelectItem::UnnamedExpr(Expr::Value(ValueWithSpan {
+                                value: Value::Placeholder("...".to_string()),
+                                span: Span::empty(),
+                            }));
+                        }
+                        _ => {}
+                    }
+                }
+                select.projection.truncate(1);
             }
         }
+        if let Some(order_by) = &mut query.order_by {
+            let OrderBy { kind, .. } = order_by;
+            if let OrderByKind::Expressions(expressions) = kind {
+                if expressions.len() > 0 {
+                    if let Some(expr) = expressions.first_mut() {
+                        expr.expr = Expr::Value(ValueWithSpan {
+                            value: Value::Placeholder("...".to_string()),
+                            span: Span::empty(),
+                        });
+                    }
+                    expressions.truncate(1);
+                }
+            }
+        }
+        ControlFlow::Continue(())
     }
 }
 
@@ -261,6 +281,41 @@ mod tests {
     }
 
     #[test]
+    fn test_select_union() {
+        let result = fingerprint_many(
+            vec!["(SELECT a, b FROM c) UNION (SELECT a, b FROM d)"],
+            None,
+        );
+        assert_eq!(
+            result,
+            vec!["(SELECT ... FROM c) UNION (SELECT ... FROM d)"]
+        );
+    }
+
+    #[test]
+    fn test_select_except() {
+        let result = fingerprint_many(
+            vec!["(SELECT a, b FROM c) EXCEPT (SELECT a, b FROM d)"],
+            None,
+        );
+        assert_eq!(
+            result,
+            vec!["(SELECT ... FROM c) EXCEPT (SELECT ... FROM d)"]
+        );
+    }
+    #[test]
+    fn test_select_intersect() {
+        let result = fingerprint_many(
+            vec!["(SELECT a, b FROM c) INTERSECT (SELECT a, b FROM d)"],
+            None,
+        );
+        assert_eq!(
+            result,
+            vec!["(SELECT ... FROM c) INTERSECT (SELECT ... FROM d)"]
+        );
+    }
+
+    #[test]
     fn test_declare_cursor() {
         let result = fingerprint_many(vec!["DECLARE c CURSOR FOR SELECT a, b FROM c join d"], None);
         assert_eq!(
@@ -279,5 +334,11 @@ mod tests {
             result,
             vec!["INSERT INTO c (...) VALUES (...) RETURNING ..."]
         );
+    }
+
+    #[test]
+    fn test_insert_select() {
+        let result = fingerprint_many(vec!["INSERT INTO a (b, c) SELECT d FROM e"], None);
+        assert_eq!(result, vec!["INSERT INTO a (...) SELECT ... FROM e"]);
     }
 }
