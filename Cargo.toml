@@ -5,6 +5,10 @@ edition = "2021"
 license = "MIT"
 description = "A SQL fingerprinter."
 repository = "https://github.com/adamchainz/sql-fingerprint"
+include = [
+    "**/*.rs",
+    "Cargo.toml",
+]
 
 [dependencies]
 sqlparser = "0.55.0"
