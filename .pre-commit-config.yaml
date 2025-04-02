@@ -1,0 +1,34 @@
+ci:
+  autoupdate_schedule: monthly
+  skip:
+  - cargo-fmt
+
+default_language_version:
+  python: python3.13
+
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v5.0.0
+  hooks:
+  - id: check-added-large-files
+  - id: check-case-conflict
+  - id: check-json
+  - id: check-merge-conflict
+  - id: check-symlinks
+  - id: check-toml
+  - id: end-of-file-fixer
+  - id: trailing-whitespace
+- repo: https://github.com/rstcheck/rstcheck
+  rev: v6.2.4
+  hooks:
+  - id: rstcheck
+    additional_dependencies:
+    - tomli==2.0.1
+- repo: local
+  hooks:
+  - id: cargo-fmt
+    name: cargo fmt
+    entry: cargo fmt --
+    language: system
+    types: [rust]
+    pass_filenames: false
