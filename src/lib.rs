@@ -1,3 +1,25 @@
+//! A SQL fingerprinter.
+//!
+//! sql-fingerprint reduces SQL queries to recognizable fingerprints for easier comparison.
+//! The goal is to provide readable traces from queries captured during tests, so that changes can be tracked over time.
+//!
+//! For example, given a query like:
+//!
+//! ```sql
+//! SELECT name, age /* computed */ FROM cheeses WHERE origin = 'France'
+//! ```
+//!
+//! …it will output a fingerprint like:
+//!
+//! ```sql
+//! SELECT ... FROM cheeses WHERE ...
+//! ```
+//!
+//! The fingerprinting process applies these changes:
+//! * Comments are dropped.
+//! * Whitespace is normalized to a single space.
+//! * Identifier and value lists are reduced to '...'.
+//! * Savepoint IDs are replaced with 's1', 's2', etc.
 use sqlparser::ast::{
     Expr, Ident, OrderBy, OrderByKind, Query, SelectItem, SetExpr, Statement, Value, ValueWithSpan,
 };
@@ -6,7 +28,30 @@ use sqlparser::parser::Parser;
 use sqlparser::tokenizer::Span;
 use std::collections::HashMap;
 
-pub fn fingerprint(input: Vec<&str>, dialect: Option<&dyn Dialect>) -> Vec<String> {
+/// Fingerprint a single SQL string.
+///
+/// # Example
+/// ```
+/// use sql_fingerprint::fingerprint_one;
+///
+/// let result = fingerprint_one("SELECT a, b FROM c ORDER BY b", None);
+/// assert_eq!(result, "SELECT ... FROM c ORDER BY ...");
+/// ```
+pub fn fingerprint_one(input: &str, dialect: Option<&dyn Dialect>) -> String {
+    fingerprint_many(vec![input], dialect).join(" ")
+}
+
+/// Fingerprint multiple SQL strings.
+/// Doing so for a batch of strings allows sharing some state, such as savepoint ID aliases.
+///
+/// # Example
+/// ```
+/// use sql_fingerprint::fingerprint_many;
+///
+/// let result = fingerprint_many(vec!["SELECT a, b FROM c", "SELECT b, c FROM d"], None);
+/// assert_eq!(result, vec!["SELECT ... FROM c", "SELECT ... FROM d"]);
+/// ```
+pub fn fingerprint_many(input: Vec<&str>, dialect: Option<&dyn Dialect>) -> Vec<String> {
     let dialect = dialect.unwrap_or(&GenericDialect {});
     let mut savepoint_simple_ids: HashMap<String, String> = HashMap::new();
     input
@@ -119,32 +164,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_fingerprint_one() {
+        let result = fingerprint_one("SELECT 123", None);
+        assert_eq!(result, "SELECT ...");
+    }
+
+    #[test]
+    fn test_empty() {
+        let result = fingerprint_many(vec![""], None);
+        assert_eq!(result, vec![""]);
+    }
+
+    #[test]
     fn test_comments_dropped() {
-        let result = fingerprint(vec!["SELECT 123 /* magic value */"], None);
+        let result = fingerprint_many(vec!["SELECT 123 /* magic value */"], None);
         assert_eq!(result, vec!["SELECT ..."]);
     }
 
     #[test]
     fn test_savepoint() {
-        let result = fingerprint(vec!["SAVEPOINT \"s1234\""], None);
+        let result = fingerprint_many(vec!["SAVEPOINT \"s1234\""], None);
         assert_eq!(result, vec!["SAVEPOINT s1"]);
     }
 
     #[test]
     fn test_multiple_savepoints() {
-        let result = fingerprint(vec!["SAVEPOINT \"s1234\"", "SAVEPOINT \"s3456\""], None);
+        let result = fingerprint_many(vec!["SAVEPOINT \"s1234\"", "SAVEPOINT \"s3456\""], None);
         assert_eq!(result, vec!["SAVEPOINT s1", "SAVEPOINT s2"]);
     }
 
     #[test]
     fn test_duplicate_savepoints() {
-        let result = fingerprint(vec!["SAVEPOINT \"s1234\"", "SAVEPOINT \"s1234\""], None);
+        let result = fingerprint_many(vec!["SAVEPOINT \"s1234\"", "SAVEPOINT \"s1234\""], None);
         assert_eq!(result, vec!["SAVEPOINT s1", "SAVEPOINT s2"]);
     }
 
     #[test]
     fn test_release_savepoints() {
-        let result = fingerprint(
+        let result = fingerprint_many(
             vec![
                 "SAVEPOINT \"s1234\"",
                 "RELEASE SAVEPOINT \"s1234\"",
@@ -166,7 +223,7 @@ mod tests {
 
     #[test]
     fn test_rollback_savepoint() {
-        let result = fingerprint(
+        let result = fingerprint_many(
             vec!["SAVEPOINT \"s1234\"", "ROLLBACK TO SAVEPOINT \"s1234\""],
             None,
         );
@@ -175,37 +232,37 @@ mod tests {
 
     #[test]
     fn test_select() {
-        let result = fingerprint(vec!["SELECT 1"], None);
+        let result = fingerprint_many(vec!["SELECT 1"], None);
         assert_eq!(result, vec!["SELECT ..."]);
     }
 
     #[test]
     fn test_select_with_from() {
-        let result = fingerprint(vec!["SELECT a, b FROM c"], None);
+        let result = fingerprint_many(vec!["SELECT a, b FROM c"], None);
         assert_eq!(result, vec!["SELECT ... FROM c"]);
     }
 
     #[test]
     fn test_select_with_from_join() {
-        let result = fingerprint(vec!["SELECT a, b FROM c JOIN d"], None);
+        let result = fingerprint_many(vec!["SELECT a, b FROM c JOIN d"], None);
         assert_eq!(result, vec!["SELECT ... FROM c JOIN d"]);
     }
 
     #[test]
     fn test_select_with_order_by() {
-        let result = fingerprint(vec!["SELECT a, b FROM c ORDER BY a, b DESC"], None);
+        let result = fingerprint_many(vec!["SELECT a, b FROM c ORDER BY a, b DESC"], None);
         assert_eq!(result, vec!["SELECT ... FROM c ORDER BY ..."]);
     }
 
     #[test]
     fn test_select_with_order_by_more() {
-        let result = fingerprint(vec!["SELECT a, b FROM c ORDER BY a ASC, b DESC"], None);
+        let result = fingerprint_many(vec!["SELECT a, b FROM c ORDER BY a ASC, b DESC"], None);
         assert_eq!(result, vec!["SELECT ... FROM c ORDER BY ... ASC"]);
     }
 
     #[test]
     fn test_declare_cursor() {
-        let result = fingerprint(vec!["DECLARE c CURSOR FOR SELECT a, b FROM c join d"], None);
+        let result = fingerprint_many(vec!["DECLARE c CURSOR FOR SELECT a, b FROM c join d"], None);
         assert_eq!(
             result,
             vec!["DECLARE ... CURSOR FOR SELECT ... FROM c JOIN d"]
@@ -214,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_insert() {
-        let result = fingerprint(
+        let result = fingerprint_many(
             vec!["INSERT INTO c (a, b) VALUES (1, 2), (3, 4) RETURNING d"],
             None,
         );
