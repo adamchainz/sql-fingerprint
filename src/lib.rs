@@ -1,7 +1,8 @@
 #![doc = include_str!("../README.md")]
 
 use sqlparser::ast::{
-    AssignmentTarget, Delete, Expr, Ident, Insert, ObjectName, ObjectNamePart, Offset, OrderBy,
+    Assignment, AssignmentTarget, ConflictTarget, Delete, DoUpdate, Expr, Ident, Insert,
+    ObjectName, ObjectNamePart, Offset, OnConflict, OnConflictAction, OnInsert, OrderBy,
     OrderByKind, Query, SelectItem, SetExpr, Statement, Value, ValueWithSpan, VisitMut, VisitorMut,
 };
 use sqlparser::dialect::{Dialect, GenericDialect};
@@ -106,6 +107,7 @@ impl VisitorMut for SavepointVisitor {
             Statement::Insert(Insert {
                 columns,
                 source,
+                on,
                 returning,
                 ..
             }) => {
@@ -115,6 +117,43 @@ impl VisitorMut for SavepointVisitor {
                 if let Some(source) = source {
                     if let SetExpr::Values(values) = source.as_mut().body.as_mut() {
                         values.rows = vec![vec![placeholder_value()]];
+                    }
+                }
+                if let Some(on) = on {
+                    match on {
+                        OnInsert::OnConflict(OnConflict {
+                            conflict_target,
+                            action,
+                        }) => {
+                            if let Some(conflict_target) = conflict_target {
+                                match conflict_target {
+                                    ConflictTarget::Columns(columns) => {
+                                        if columns.len() > 0 {
+                                            *columns = vec![Ident::new("...")];
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            if let OnConflictAction::DoUpdate(DoUpdate {
+                                assignments,
+                                selection,
+                            }) = action
+                            {
+                                if assignments.len() > 0 {
+                                    *assignments = vec![Assignment {
+                                        target: AssignmentTarget::ColumnName(ObjectName(vec![
+                                            ObjectNamePart::Identifier(Ident::new("...")),
+                                        ])),
+                                        value: placeholder_value(),
+                                    }];
+                                }
+                                if let Some(selection) = selection {
+                                    *selection = placeholder_value();
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 if let Some(returning) = returning {
@@ -438,6 +477,20 @@ mod tests {
     fn test_insert_select() {
         let result = fingerprint_many(vec!["INSERT INTO a (b, c) SELECT d FROM e"], None);
         assert_eq!(result, vec!["INSERT INTO a (...) SELECT ... FROM e"]);
+    }
+
+    #[test]
+    fn test_insert_on_conflict() {
+        let result = fingerprint_many(
+            vec!["INSERT INTO a (b, c) VALUES (1, 2) ON CONFLICT(\"a\", \"b\") DO UPDATE SET \"d\" = EXCLUDED.d WHERE e = f RETURNING b, c"],
+            None,
+        );
+        assert_eq!(
+            result,
+            vec![
+                "INSERT INTO a (...) VALUES (...) ON CONFLICT(...) DO UPDATE SET ... = ... WHERE ... RETURNING ..."
+            ]
+        );
     }
 
     #[test]
