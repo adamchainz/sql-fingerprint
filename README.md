@@ -28,5 +28,6 @@ The fingerprinting process applies these changes:
 * Comments are dropped.
 * Whitespace is normalized to a single space.
 * Identifier and value lists are reduced to '...'.
-* Table names consisting of letters, numbers, and underscores have any quoting removed.
+* Identifiers consisting of letters, numbers, and underscores have any quoting removed.
 * Savepoint IDs are replaced with 's1', 's2', etc.
+* Unparseable SQL is returned unchanged.
