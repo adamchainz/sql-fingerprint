@@ -1,8 +1,8 @@
 #![doc = include_str!("../README.md")]
 
 use sqlparser::ast::{
-    Expr, Ident, OrderBy, OrderByKind, Query, SelectItem, SetExpr, Statement, Value, ValueWithSpan,
-    VisitMut, VisitorMut,
+    AssignmentTarget, Delete, Expr, Ident, Insert, ObjectName, ObjectNamePart, OrderBy,
+    OrderByKind, Query, SelectItem, SetExpr, Statement, Value, ValueWithSpan, VisitMut, VisitorMut,
 };
 use sqlparser::dialect::{Dialect, GenericDialect};
 use sqlparser::parser::Parser;
@@ -98,24 +98,60 @@ impl VisitorMut for SavepointVisitor {
                     }
                 }
             }
-            Statement::Insert(insert) => {
-                if insert.columns.len() > 0 {
-                    insert.columns = vec![Ident::new("...")];
+            Statement::Insert(Insert {
+                columns,
+                source,
+                returning,
+                ..
+            }) => {
+                if columns.len() > 0 {
+                    *columns = vec![Ident::new("...")];
                 }
-                if let Some(source) = &mut insert.source {
+                if let Some(source) = source {
                     if let SetExpr::Values(values) = source.as_mut().body.as_mut() {
-                        values.rows = vec![vec![Expr::Value(ValueWithSpan {
-                            value: Value::Placeholder("...".to_string()),
-                            span: Span::empty(),
-                        })]];
+                        values.rows = vec![vec![placeholder_value()]];
                     }
                 }
-                if let Some(returning) = &mut insert.returning {
+                if let Some(returning) = returning {
                     if returning.len() > 0 {
-                        *returning = vec![SelectItem::UnnamedExpr(Expr::Value(ValueWithSpan {
-                            value: Value::Placeholder("...".to_string()),
-                            span: Span::empty(),
-                        }))];
+                        *returning = vec![SelectItem::UnnamedExpr(placeholder_value())];
+                    }
+                }
+            }
+            Statement::Update {
+                assignments,
+                selection,
+                returning,
+                ..
+            } => {
+                if assignments.len() > 0 {
+                    *assignments = vec![sqlparser::ast::Assignment {
+                        target: AssignmentTarget::ColumnName(ObjectName(vec![
+                            ObjectNamePart::Identifier(Ident::new("...")),
+                        ])),
+                        value: placeholder_value(),
+                    }];
+                }
+                if let Some(selection) = selection {
+                    *selection = placeholder_value();
+                }
+                if let Some(returning) = returning {
+                    if returning.len() > 0 {
+                        *returning = vec![SelectItem::UnnamedExpr(placeholder_value())];
+                    }
+                }
+            }
+            Statement::Delete(Delete {
+                selection,
+                returning,
+                ..
+            }) => {
+                if let Some(selection) = selection {
+                    *selection = placeholder_value();
+                }
+                if let Some(returning) = returning {
+                    if returning.len() > 0 {
+                        *returning = vec![SelectItem::UnnamedExpr(placeholder_value())];
                     }
                 }
             }
@@ -130,10 +166,7 @@ impl VisitorMut for SavepointVisitor {
                 if let Some(item) = select.projection.first_mut() {
                     match item {
                         SelectItem::UnnamedExpr(_) | SelectItem::ExprWithAlias { .. } => {
-                            *item = SelectItem::UnnamedExpr(Expr::Value(ValueWithSpan {
-                                value: Value::Placeholder("...".to_string()),
-                                span: Span::empty(),
-                            }));
+                            *item = SelectItem::UnnamedExpr(placeholder_value());
                         }
                         _ => {}
                     }
@@ -146,10 +179,7 @@ impl VisitorMut for SavepointVisitor {
             if let OrderByKind::Expressions(expressions) = kind {
                 if expressions.len() > 0 {
                     if let Some(expr) = expressions.first_mut() {
-                        expr.expr = Expr::Value(ValueWithSpan {
-                            value: Value::Placeholder("...".to_string()),
-                            span: Span::empty(),
-                        });
+                        expr.expr = placeholder_value();
                     }
                     expressions.truncate(1);
                 }
@@ -157,6 +187,26 @@ impl VisitorMut for SavepointVisitor {
         }
         ControlFlow::Continue(())
     }
+
+    fn pre_visit_relation(&mut self, _relation: &mut ObjectName) -> ControlFlow<Self::Break> {
+        for part in _relation.0.iter_mut() {
+            match part {
+                ObjectNamePart::Identifier(ident) => {
+                    if ident.value.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                        ident.quote_style = None;
+                    }
+                }
+            }
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+fn placeholder_value() -> Expr {
+    Expr::Value(ValueWithSpan {
+        value: Value::Placeholder("...".to_string()),
+        span: Span::empty(),
+    })
 }
 
 #[cfg(test)]
@@ -243,6 +293,12 @@ mod tests {
     }
 
     #[test]
+    fn test_select_with_from_quoted() {
+        let result = fingerprint_many(vec!["SELECT a, b FROM \"c\".\"d\""], None);
+        assert_eq!(result, vec!["SELECT ... FROM c.d"]);
+    }
+
+    #[test]
     fn test_select_with_from_join() {
         let result = fingerprint_many(vec!["SELECT a, b FROM c JOIN d"], None);
         assert_eq!(result, vec!["SELECT ... FROM c JOIN d"]);
@@ -320,5 +376,23 @@ mod tests {
     fn test_insert_select() {
         let result = fingerprint_many(vec!["INSERT INTO a (b, c) SELECT d FROM e"], None);
         assert_eq!(result, vec!["INSERT INTO a (...) SELECT ... FROM e"]);
+    }
+
+    #[test]
+    fn test_update() {
+        let result = fingerprint_many(
+            vec!["UPDATE a SET b = 1, c = 2 WHERE d = 3 RETURNING e"],
+            None,
+        );
+        assert_eq!(
+            result,
+            vec!["UPDATE a SET ... = ... WHERE ... RETURNING ..."]
+        );
+    }
+
+    #[test]
+    fn test_delete() {
+        let result = fingerprint_many(vec!["DELETE FROM a WHERE b = 1 RETURNING c"], None);
+        assert_eq!(result, vec!["DELETE FROM a WHERE ... RETURNING ..."]);
     }
 }
