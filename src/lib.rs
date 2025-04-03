@@ -1,7 +1,7 @@
 #![doc = include_str!("../README.md")]
 
 use sqlparser::ast::{
-    AssignmentTarget, Delete, Expr, Ident, Insert, ObjectName, ObjectNamePart, OrderBy,
+    AssignmentTarget, Delete, Expr, Ident, Insert, ObjectName, ObjectNamePart, Offset, OrderBy,
     OrderByKind, Query, SelectItem, SetExpr, Statement, Value, ValueWithSpan, VisitMut, VisitorMut,
 };
 use sqlparser::dialect::{Dialect, GenericDialect};
@@ -173,6 +173,10 @@ impl VisitorMut for SavepointVisitor {
                 }
                 select.projection.truncate(1);
             }
+
+            if let Some(selection) = &mut select.selection {
+                *selection = placeholder_value();
+            }
         }
         if let Some(order_by) = &mut query.order_by {
             let OrderBy { kind, .. } = order_by;
@@ -185,6 +189,12 @@ impl VisitorMut for SavepointVisitor {
                 }
             }
         }
+        if let Some(limit) = &mut query.limit {
+            *limit = placeholder_value();
+        }
+        if let Some(Offset { value, .. }) = &mut query.offset {
+            *value = placeholder_value();
+        }
         ControlFlow::Continue(())
     }
 
@@ -192,11 +202,24 @@ impl VisitorMut for SavepointVisitor {
         for part in _relation.0.iter_mut() {
             match part {
                 ObjectNamePart::Identifier(ident) => {
-                    if ident.value.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                        ident.quote_style = None;
-                    }
+                    maybe_unquote_ident(ident);
                 }
             }
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_expr(&mut self, _expr: &mut Expr) -> ControlFlow<Self::Break> {
+        match _expr {
+            Expr::Identifier(ident) => {
+                maybe_unquote_ident(ident);
+            }
+            Expr::CompoundIdentifier(idents) => {
+                for ident in idents {
+                    maybe_unquote_ident(ident);
+                }
+            }
+            _ => {}
         }
         ControlFlow::Continue(())
     }
@@ -207,6 +230,16 @@ fn placeholder_value() -> Expr {
         value: Value::Placeholder("...".to_string()),
         span: Span::empty(),
     })
+}
+
+fn maybe_unquote_ident(ident: &mut Ident) -> () {
+    let Ident {
+        value, quote_style, ..
+    } = ident;
+
+    if value.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        *quote_style = None;
+    }
 }
 
 #[cfg(test)]
@@ -282,14 +315,14 @@ mod tests {
 
     #[test]
     fn test_select() {
-        let result = fingerprint_many(vec!["SELECT 1"], None);
-        assert_eq!(result, vec!["SELECT ..."]);
+        let result = fingerprint_many(vec!["SELECT a, b FROM c WHERE a = b"], None);
+        assert_eq!(result, vec!["SELECT ... FROM c WHERE ..."]);
     }
 
     #[test]
-    fn test_select_with_from() {
-        let result = fingerprint_many(vec!["SELECT a, b FROM c"], None);
-        assert_eq!(result, vec!["SELECT ... FROM c"]);
+    fn test_select_single_value() {
+        let result = fingerprint_many(vec!["SELECT 1"], None);
+        assert_eq!(result, vec!["SELECT ..."]);
     }
 
     #[test]
@@ -305,6 +338,18 @@ mod tests {
     }
 
     #[test]
+    fn test_select_with_from_join_quoted() {
+        let result = fingerprint_many(
+            vec!["SELECT a, b FROM c INNER JOIN d ON (\"d\".\"a\" = \"c\".\"a\")"],
+            None,
+        );
+        assert_eq!(
+            result,
+            vec!["SELECT ... FROM c INNER JOIN d ON (d.a = c.a)"]
+        );
+    }
+
+    #[test]
     fn test_select_with_order_by() {
         let result = fingerprint_many(vec!["SELECT a, b FROM c ORDER BY a, b DESC"], None);
         assert_eq!(result, vec!["SELECT ... FROM c ORDER BY ..."]);
@@ -314,6 +359,12 @@ mod tests {
     fn test_select_with_order_by_more() {
         let result = fingerprint_many(vec!["SELECT a, b FROM c ORDER BY a ASC, b DESC"], None);
         assert_eq!(result, vec!["SELECT ... FROM c ORDER BY ... ASC"]);
+    }
+
+    #[test]
+    fn test_select_with_limit_offset() {
+        let result = fingerprint_many(vec!["SELECT a FROM b LIMIT 21 OFFSET 101 ROWS"], None);
+        assert_eq!(result, vec!["SELECT ... FROM b LIMIT ... OFFSET ... ROWS"]);
     }
 
     #[test]
