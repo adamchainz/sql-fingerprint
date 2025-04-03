@@ -12,6 +12,8 @@ use std::ops::ControlFlow;
 
 /// Fingerprint a single SQL string.
 ///
+/// Unparseable SQL is returned as-is.
+///
 /// # Example
 /// ```
 /// use sql_fingerprint::fingerprint_one;
@@ -25,6 +27,8 @@ pub fn fingerprint_one(input: &str, dialect: Option<&dyn Dialect>) -> String {
 
 /// Fingerprint multiple SQL strings.
 /// Doing so for a batch of strings allows sharing some state, such as savepoint ID aliases.
+///
+/// Unparseable SQL is returned as-is.
 ///
 /// # Example
 /// ```
@@ -40,17 +44,18 @@ pub fn fingerprint_many(input: Vec<&str>, dialect: Option<&dyn Dialect>) -> Vec<
 
     input
         .iter()
-        .map(|sql| {
-            let mut ast = Parser::parse_sql(dialect, sql).unwrap();
+        .map(|sql| match Parser::parse_sql(dialect, sql) {
+            Ok(mut ast) => {
+                for stmt in &mut ast {
+                    stmt.visit(&mut savepoint_visitor);
+                }
 
-            for stmt in &mut ast {
-                stmt.visit(&mut savepoint_visitor);
+                ast.into_iter()
+                    .map(|stmt| stmt.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ")
             }
-
-            ast.into_iter()
-                .map(|stmt| stmt.to_string())
-                .collect::<Vec<_>>()
-                .join(" ")
+            Err(_) => sql.to_string(),
         })
         .collect()
 }
@@ -256,6 +261,12 @@ mod tests {
     fn test_empty() {
         let result = fingerprint_many(vec![""], None);
         assert_eq!(result, vec![""]);
+    }
+
+    #[test]
+    fn test_unparseable() {
+        let result = fingerprint_many(vec!["SELECT  SELECT  SELECT  SELECT"], None);
+        assert_eq!(result, vec!["SELECT  SELECT  SELECT  SELECT"]);
     }
 
     #[test]
