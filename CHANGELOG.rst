@@ -2,6 +2,10 @@
 Changelog
 =========
 
+* Clear ``WHERE``, ``LIMIT``, and ``OFFSET`` clauses in ``SELECT`` statements.
+
+* Unquote table and column names in more cases.
+
 1.0.0 (2025-04-03)
 ------------------
 
