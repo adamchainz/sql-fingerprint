@@ -22,3 +22,10 @@ SELECT name, age /* computed */ FROM cheeses WHERE origin = 'France'
 ```sql
 SELECT ... FROM cheeses WHERE ...
 ```
+
+The fingerprinting process applies these changes:
+
+* Comments are dropped.
+* Whitespace is normalized to a single space.
+* Identifier and value lists are reduced to '...'.
+* Savepoint IDs are replaced with 's1', 's2', etc.
