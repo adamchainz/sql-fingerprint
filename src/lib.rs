@@ -1,25 +1,5 @@
-//! A SQL fingerprinter.
-//!
-//! sql-fingerprint reduces SQL queries to recognizable fingerprints for easier comparison.
-//! The goal is to provide readable traces from queries captured during tests, so that changes can be tracked over time.
-//!
-//! For example, given a query like:
-//!
-//! ```sql
-//! SELECT name, age /* computed */ FROM cheeses WHERE origin = 'France'
-//! ```
-//!
-//! …it will output a fingerprint like:
-//!
-//! ```sql
-//! SELECT ... FROM cheeses WHERE ...
-//! ```
-//!
-//! The fingerprinting process applies these changes:
-//! * Comments are dropped.
-//! * Whitespace is normalized to a single space.
-//! * Identifier and value lists are reduced to '...'.
-//! * Savepoint IDs are replaced with 's1', 's2', etc.
+#![doc = include_str!("../README.md")]
+
 use sqlparser::ast::{
     Expr, Ident, OrderBy, OrderByKind, Query, SelectItem, SetExpr, Statement, Value, ValueWithSpan,
     VisitMut, VisitorMut,
