@@ -2,6 +2,9 @@
 Changelog
 =========
 
+1.2.0 (2025-04-03)
+------------------
+
 * Clear ``ON CONFLICT``, ``UPDATE``, and ``WHERE`` clauses in ``INSERT`` statements.
 
 1.1.0 (2025-04-03)
