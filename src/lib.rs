@@ -1,8 +1,8 @@
 #![doc = include_str!("../README.md")]
 
 use sqlparser::ast::{
-    Assignment, AssignmentTarget, ConflictTarget, Delete, DoUpdate, Expr, Ident, Insert,
-    ObjectName, ObjectNamePart, Offset, OnConflict, OnConflictAction, OnInsert, OrderBy,
+    Assignment, AssignmentTarget, ConflictTarget, Delete, DoUpdate, Expr, GroupByExpr, Ident,
+    Insert, ObjectName, ObjectNamePart, Offset, OnConflict, OnConflictAction, OnInsert, OrderBy,
     OrderByKind, Query, SelectItem, SetExpr, Statement, Value, ValueWithSpan, VisitMut, VisitorMut,
 };
 use sqlparser::dialect::{Dialect, GenericDialect};
@@ -221,6 +221,15 @@ impl VisitorMut for SavepointVisitor {
             if let Some(selection) = &mut select.selection {
                 *selection = placeholder_value();
             }
+
+            match &mut select.group_by {
+                GroupByExpr::Expressions(col_names, ..) => {
+                    if col_names.len() > 0 {
+                        *col_names = vec![placeholder_value()];
+                    }
+                }
+                _ => {}
+            }
         }
         if let Some(order_by) = &mut query.order_by {
             let OrderBy { kind, .. } = order_by;
@@ -397,6 +406,12 @@ mod tests {
             result,
             vec!["SELECT ... FROM c INNER JOIN d ON (d.a = c.a)"]
         );
+    }
+
+    #[test]
+    fn test_select_with_group_by() {
+        let result = fingerprint_many(vec!["SELECT a, b FROM c GROUP BY a, b"], None);
+        assert_eq!(result, vec!["SELECT ... FROM c GROUP BY ..."]);
     }
 
     #[test]
