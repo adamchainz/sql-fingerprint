@@ -2,6 +2,9 @@
 Changelog
 =========
 
+1.3.0 (2025-04-04)
+------------------
+
 * Clear ``GROUP BY`` clauses in ``SELECT`` statements.
 
 1.2.0 (2025-04-03)
