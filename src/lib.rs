@@ -2,8 +2,9 @@
 
 use sqlparser::ast::{
     Assignment, AssignmentTarget, ConflictTarget, Delete, DoUpdate, Expr, GroupByExpr, Ident,
-    Insert, ObjectName, ObjectNamePart, Offset, OnConflict, OnConflictAction, OnInsert, OrderBy,
-    OrderByKind, Query, SelectItem, SetExpr, Statement, Value, ValueWithSpan, VisitMut, VisitorMut,
+    Insert, JoinConstraint, JoinOperator, ObjectName, ObjectNamePart, Offset, OnConflict,
+    OnConflictAction, OnInsert, OrderBy, OrderByKind, Query, SelectItem, SetExpr, Statement, Value,
+    ValueWithSpan, VisitMut, VisitorMut,
 };
 use sqlparser::dialect::{Dialect, GenericDialect};
 use sqlparser::parser::Parser;
@@ -218,6 +219,32 @@ impl VisitorMut for SavepointVisitor {
                 select.projection.truncate(1);
             }
 
+            for table_with_joins in &mut select.from {
+                for join in &mut table_with_joins.joins {
+                    match &mut join.join_operator {
+                        JoinOperator::Join(constraint)
+                        | JoinOperator::Inner(constraint)
+                        | JoinOperator::Left(constraint)
+                        | JoinOperator::LeftOuter(constraint)
+                        | JoinOperator::Right(constraint)
+                        | JoinOperator::RightOuter(constraint)
+                        | JoinOperator::FullOuter(constraint)
+                        | JoinOperator::Semi(constraint)
+                        | JoinOperator::LeftSemi(constraint)
+                        | JoinOperator::RightSemi(constraint)
+                        | JoinOperator::Anti(constraint)
+                        | JoinOperator::LeftAnti(constraint)
+                        | JoinOperator::RightAnti(constraint) => match constraint {
+                            JoinConstraint::On(expr) => {
+                                *expr = placeholder_value();
+                            }
+                            _ => {}
+                        },
+                        _ => {}
+                    }
+                }
+            }
+
             if let Some(selection) = &mut select.selection {
                 *selection = placeholder_value();
             }
@@ -397,15 +424,21 @@ mod tests {
     }
 
     #[test]
-    fn test_select_with_from_join_quoted() {
+    fn test_select_with_from_inner_join_quoted() {
         let result = fingerprint_many(
             vec!["SELECT a, b FROM c INNER JOIN d ON (\"d\".\"a\" = \"c\".\"a\")"],
             None,
         );
-        assert_eq!(
-            result,
-            vec!["SELECT ... FROM c INNER JOIN d ON (d.a = c.a)"]
+        assert_eq!(result, vec!["SELECT ... FROM c INNER JOIN d ON ..."]);
+    }
+
+    #[test]
+    fn test_select_with_from_left_outer_join_quoted() {
+        let result = fingerprint_many(
+            vec!["SELECT a, b FROM c LEFT OUTER JOIN d ON (\"d\".\"a\" = \"c\".\"a\")"],
+            None,
         );
+        assert_eq!(result, vec!["SELECT ... FROM c LEFT OUTER JOIN d ON ..."]);
     }
 
     #[test]
