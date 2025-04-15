@@ -2,6 +2,9 @@
 Changelog
 =========
 
+1.4.0 (2025-04-15)
+------------------
+
 * Clear expressions in ``JOIN`` clauses.
 
 1.3.0 (2025-04-04)
