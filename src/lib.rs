@@ -1,8 +1,8 @@
 #![doc = include_str!("../README.md")]
 
 use sqlparser::ast::{
-    Assignment, AssignmentTarget, ConflictTarget, Delete, DoUpdate, Expr, GroupByExpr, Ident,
-    Insert, JoinConstraint, JoinOperator, ObjectName, ObjectNamePart, Offset, OnConflict,
+    Assignment, AssignmentTarget, ConflictTarget, Delete, Distinct, DoUpdate, Expr, GroupByExpr,
+    Ident, Insert, JoinConstraint, JoinOperator, ObjectName, ObjectNamePart, Offset, OnConflict,
     OnConflictAction, OnInsert, OrderBy, OrderByKind, Query, SelectItem, SetExpr, Statement, Value,
     ValueWithSpan, VisitMut, VisitorMut,
 };
@@ -219,6 +219,17 @@ impl VisitorMut for SavepointVisitor {
                 select.projection.truncate(1);
             }
 
+            if let Some(distinct) = &mut select.distinct {
+                match distinct {
+                    Distinct::On(exprs) => {
+                        if exprs.len() > 0 {
+                            *exprs = vec![placeholder_value()];
+                        }
+                    }
+                    _ => {}
+                }
+            };
+
             for table_with_joins in &mut select.from {
                 for join in &mut table_with_joins.joins {
                     match &mut join.join_operator {
@@ -409,6 +420,12 @@ mod tests {
     fn test_select_single_value() {
         let result = fingerprint_many(vec!["SELECT 1"], None);
         assert_eq!(result, vec!["SELECT ..."]);
+    }
+
+    #[test]
+    fn test_select_distinct_on() {
+        let result = fingerprint_many(vec!["SELECT DISTINCT ON (a, b) c FROM d"], None);
+        assert_eq!(result, vec!["SELECT DISTINCT ON (...) ... FROM d"]);
     }
 
     #[test]
