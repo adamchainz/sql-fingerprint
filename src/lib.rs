@@ -100,7 +100,7 @@ impl VisitorMut for SavepointVisitor {
             }
             Statement::Declare { stmts } => {
                 for stmt in stmts {
-                    if stmt.names.len() > 0 {
+                    if !stmt.names.is_empty() {
                         stmt.names = vec![Ident::new("...")];
                     }
                 }
@@ -112,7 +112,7 @@ impl VisitorMut for SavepointVisitor {
                 returning,
                 ..
             }) => {
-                if columns.len() > 0 {
+                if !columns.is_empty() {
                     *columns = vec![Ident::new("...")];
                 }
                 if let Some(source) = source {
@@ -120,45 +120,36 @@ impl VisitorMut for SavepointVisitor {
                         values.rows = vec![vec![placeholder_value()]];
                     }
                 }
-                if let Some(on) = on {
-                    match on {
-                        OnInsert::OnConflict(OnConflict {
-                            conflict_target,
-                            action,
-                        }) => {
-                            if let Some(conflict_target) = conflict_target {
-                                match conflict_target {
-                                    ConflictTarget::Columns(columns) => {
-                                        if columns.len() > 0 {
-                                            *columns = vec![Ident::new("...")];
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            if let OnConflictAction::DoUpdate(DoUpdate {
-                                assignments,
-                                selection,
-                            }) = action
-                            {
-                                if assignments.len() > 0 {
-                                    *assignments = vec![Assignment {
-                                        target: AssignmentTarget::ColumnName(ObjectName(vec![
-                                            ObjectNamePart::Identifier(Ident::new("...")),
-                                        ])),
-                                        value: placeholder_value(),
-                                    }];
-                                }
-                                if let Some(selection) = selection {
-                                    *selection = placeholder_value();
-                                }
-                            }
+                if let Some(OnInsert::OnConflict(OnConflict {
+                    conflict_target,
+                    action,
+                })) = on
+                {
+                    if let Some(ConflictTarget::Columns(columns)) = conflict_target {
+                        if !columns.is_empty() {
+                            *columns = vec![Ident::new("...")];
                         }
-                        _ => {}
+                    }
+                    if let OnConflictAction::DoUpdate(DoUpdate {
+                        assignments,
+                        selection,
+                    }) = action
+                    {
+                        if !assignments.is_empty() {
+                            *assignments = vec![Assignment {
+                                target: AssignmentTarget::ColumnName(ObjectName(vec![
+                                    ObjectNamePart::Identifier(Ident::new("...")),
+                                ])),
+                                value: placeholder_value(),
+                            }];
+                        }
+                        if let Some(selection) = selection {
+                            *selection = placeholder_value();
+                        }
                     }
                 }
                 if let Some(returning) = returning {
-                    if returning.len() > 0 {
+                    if !returning.is_empty() {
                         *returning = vec![SelectItem::UnnamedExpr(placeholder_value())];
                     }
                 }
@@ -169,7 +160,7 @@ impl VisitorMut for SavepointVisitor {
                 returning,
                 ..
             } => {
-                if assignments.len() > 0 {
+                if !assignments.is_empty() {
                     *assignments = vec![sqlparser::ast::Assignment {
                         target: AssignmentTarget::ColumnName(ObjectName(vec![
                             ObjectNamePart::Identifier(Ident::new("...")),
@@ -181,7 +172,7 @@ impl VisitorMut for SavepointVisitor {
                     *selection = placeholder_value();
                 }
                 if let Some(returning) = returning {
-                    if returning.len() > 0 {
+                    if !returning.is_empty() {
                         *returning = vec![SelectItem::UnnamedExpr(placeholder_value())];
                     }
                 }
@@ -195,7 +186,7 @@ impl VisitorMut for SavepointVisitor {
                     *selection = placeholder_value();
                 }
                 if let Some(returning) = returning {
-                    if returning.len() > 0 {
+                    if !returning.is_empty() {
                         *returning = vec![SelectItem::UnnamedExpr(placeholder_value())];
                     }
                 }
@@ -207,7 +198,7 @@ impl VisitorMut for SavepointVisitor {
 
     fn pre_visit_query(&mut self, query: &mut Query) -> ControlFlow<Self::Break> {
         if let SetExpr::Select(select) = query.body.as_mut() {
-            if select.projection.len() > 0 {
+            if !select.projection.is_empty() {
                 if let Some(item) = select.projection.first_mut() {
                     match item {
                         SelectItem::UnnamedExpr(_) | SelectItem::ExprWithAlias { .. } => {
@@ -219,14 +210,9 @@ impl VisitorMut for SavepointVisitor {
                 select.projection.truncate(1);
             }
 
-            if let Some(distinct) = &mut select.distinct {
-                match distinct {
-                    Distinct::On(exprs) => {
-                        if exprs.len() > 0 {
-                            *exprs = vec![placeholder_value()];
-                        }
-                    }
-                    _ => {}
+            if let Some(Distinct::On(exprs)) = &mut select.distinct {
+                if !exprs.is_empty() {
+                    *exprs = vec![placeholder_value()];
                 }
             };
 
@@ -245,12 +231,11 @@ impl VisitorMut for SavepointVisitor {
                         | JoinOperator::RightSemi(constraint)
                         | JoinOperator::Anti(constraint)
                         | JoinOperator::LeftAnti(constraint)
-                        | JoinOperator::RightAnti(constraint) => match constraint {
-                            JoinConstraint::On(expr) => {
+                        | JoinOperator::RightAnti(constraint) => {
+                            if let JoinConstraint::On(expr) = constraint {
                                 *expr = placeholder_value();
                             }
-                            _ => {}
-                        },
+                        }
                         _ => {}
                     }
                 }
@@ -260,19 +245,16 @@ impl VisitorMut for SavepointVisitor {
                 *selection = placeholder_value();
             }
 
-            match &mut select.group_by {
-                GroupByExpr::Expressions(col_names, ..) => {
-                    if col_names.len() > 0 {
-                        *col_names = vec![placeholder_value()];
-                    }
+            if let GroupByExpr::Expressions(col_names, ..) = &mut select.group_by {
+                if !col_names.is_empty() {
+                    *col_names = vec![placeholder_value()];
                 }
-                _ => {}
             }
         }
         if let Some(order_by) = &mut query.order_by {
             let OrderBy { kind, .. } = order_by;
             if let OrderByKind::Expressions(expressions) = kind {
-                if expressions.len() > 0 {
+                if !expressions.is_empty() {
                     if let Some(expr) = expressions.first_mut() {
                         expr.expr = placeholder_value();
                     }
@@ -323,7 +305,7 @@ fn placeholder_value() -> Expr {
     })
 }
 
-fn maybe_unquote_ident(ident: &mut Ident) -> () {
+fn maybe_unquote_ident(ident: &mut Ident) {
     let Ident {
         value, quote_style, ..
     } = ident;
