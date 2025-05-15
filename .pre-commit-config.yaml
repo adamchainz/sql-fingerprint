@@ -9,7 +9,7 @@ default_language_version:
 
 repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v5.0.0
+  rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b  # frozen: v5.0.0
   hooks:
   - id: check-added-large-files
   - id: check-case-conflict
@@ -20,7 +20,7 @@ repos:
   - id: end-of-file-fixer
   - id: trailing-whitespace
 - repo: https://github.com/rstcheck/rstcheck
-  rev: v6.2.4
+  rev: f30c4d170a36ea3812bceb5f33004afc213bd797  # frozen: v6.2.4
   hooks:
   - id: rstcheck
     additional_dependencies:
