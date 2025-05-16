@@ -30,4 +30,4 @@ The fingerprinting process applies these changes:
 * Identifier and value lists are reduced to '...'.
 * Identifiers consisting of letters, numbers, and underscores have any quoting removed.
 * Savepoint IDs are replaced with 's1', 's2', etc.
-* Unparseable SQL is returned unchanged.
+* Unparsable SQL is returned unchanged.

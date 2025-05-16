@@ -29,7 +29,7 @@ Changelog
 
 * Unquote table and column names in more cases.
 
-* Handle unparseable SQL statements.
+* Handle unparsable SQL statements.
 
 1.0.0 (2025-04-03)
 ------------------

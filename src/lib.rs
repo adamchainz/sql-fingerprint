@@ -14,7 +14,7 @@ use std::ops::ControlFlow;
 
 /// Fingerprint a single SQL string.
 ///
-/// Unparseable SQL is returned as-is.
+/// Unparsable SQL is returned as-is.
 ///
 /// # Example
 /// ```
@@ -30,7 +30,7 @@ pub fn fingerprint_one(input: &str, dialect: Option<&dyn Dialect>) -> String {
 /// Fingerprint multiple SQL strings.
 /// Doing so for a batch of strings allows sharing some state, such as savepoint ID aliases.
 ///
-/// Unparseable SQL is returned as-is.
+/// Unparsable SQL is returned as-is.
 ///
 /// # Example
 /// ```
@@ -332,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn test_unparseable() {
+    fn test_unparsable() {
         let result = fingerprint_many(vec!["SELECT  SELECT  SELECT  SELECT"], None);
         assert_eq!(result, vec!["SELECT  SELECT  SELECT  SELECT"]);
     }
