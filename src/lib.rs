@@ -49,7 +49,7 @@ pub fn fingerprint_many(input: Vec<&str>, dialect: Option<&dyn Dialect>) -> Vec<
         .map(|sql| match Parser::parse_sql(dialect, sql) {
             Ok(mut ast) => {
                 for stmt in &mut ast {
-                    stmt.visit(&mut savepoint_visitor);
+                    let _ = stmt.visit(&mut savepoint_visitor);
                 }
 
                 ast.into_iter()
