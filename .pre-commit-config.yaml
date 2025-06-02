@@ -24,7 +24,7 @@ repos:
   hooks:
   - id: typos
 - repo: https://github.com/rstcheck/rstcheck
-  rev: f30c4d170a36ea3812bceb5f33004afc213bd797  # frozen: v6.2.4
+  rev: 27258fde1ee7d3b1e6a7bbc58f4c7b1dd0e719e5  # frozen: v6.2.5
   hooks:
   - id: rstcheck
     additional_dependencies:
