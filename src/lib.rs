@@ -529,7 +529,9 @@ mod tests {
     #[test]
     fn test_insert_on_conflict() {
         let result = fingerprint_many(
-            vec!["INSERT INTO a (b, c) VALUES (1, 2) ON CONFLICT(\"a\", \"b\") DO UPDATE SET \"d\" = EXCLUDED.d WHERE e = f RETURNING b, c"],
+            vec![
+                "INSERT INTO a (b, c) VALUES (1, 2) ON CONFLICT(\"a\", \"b\") DO UPDATE SET \"d\" = EXCLUDED.d WHERE e = f RETURNING b, c",
+            ],
             None,
         );
         assert_eq!(
