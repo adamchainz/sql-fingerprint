@@ -42,14 +42,14 @@ pub fn fingerprint_one(input: &str, dialect: Option<&dyn Dialect>) -> String {
 pub fn fingerprint_many(input: Vec<&str>, dialect: Option<&dyn Dialect>) -> Vec<String> {
     let dialect = dialect.unwrap_or(&GenericDialect {});
 
-    let mut savepoint_visitor = SavepointVisitor::new();
+    let mut visitor = FingerprintingVisitor::new();
 
     input
         .iter()
         .map(|sql| match Parser::parse_sql(dialect, sql) {
             Ok(mut ast) => {
                 for stmt in &mut ast {
-                    let _ = stmt.visit(&mut savepoint_visitor);
+                    let _ = stmt.visit(&mut visitor);
                 }
 
                 ast.into_iter()
@@ -62,19 +62,19 @@ pub fn fingerprint_many(input: Vec<&str>, dialect: Option<&dyn Dialect>) -> Vec<
         .collect()
 }
 
-struct SavepointVisitor {
+struct FingerprintingVisitor {
     savepoint_ids: HashMap<String, String>,
 }
 
-impl SavepointVisitor {
+impl FingerprintingVisitor {
     fn new() -> Self {
-        SavepointVisitor {
+        FingerprintingVisitor {
             savepoint_ids: HashMap::new(),
         }
     }
 }
 
-impl VisitorMut for SavepointVisitor {
+impl VisitorMut for FingerprintingVisitor {
     type Break = ();
 
     fn pre_visit_statement(&mut self, stmt: &mut Statement) -> ControlFlow<Self::Break> {
