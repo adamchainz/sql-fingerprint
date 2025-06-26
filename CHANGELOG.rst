@@ -2,6 +2,9 @@
 Changelog
 =========
 
+1.7.0 (2025-06-26)
+------------------
+
 * Simplify set expressions (``UNION``, ``INTERSECT``, ``EXCEPT``, and so on) even when non-parenthesized, and up to unlimited chaining.
 
 1.6.0 (2025-06-26)
