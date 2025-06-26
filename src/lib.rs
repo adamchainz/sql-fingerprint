@@ -2,9 +2,9 @@
 
 use sqlparser::ast::{
     Assignment, AssignmentTarget, ConflictTarget, Delete, Distinct, DoUpdate, Expr, GroupByExpr,
-    Ident, Insert, JoinConstraint, JoinOperator, ObjectName, ObjectNamePart, Offset, OnConflict,
-    OnConflictAction, OnInsert, OrderBy, OrderByKind, Query, SelectItem, SetExpr, Statement, Value,
-    ValueWithSpan, VisitMut, VisitorMut,
+    Ident, Insert, JoinConstraint, JoinOperator, LimitClause, ObjectName, ObjectNamePart, Offset,
+    OnConflict, OnConflictAction, OnInsert, OrderBy, OrderByKind, Query, SelectItem, SetExpr,
+    Statement, Value, ValueWithSpan, VisitMut, VisitorMut,
 };
 use sqlparser::dialect::{Dialect, GenericDialect};
 use sqlparser::parser::Parser;
@@ -262,11 +262,29 @@ impl VisitorMut for SavepointVisitor {
                 }
             }
         }
-        if let Some(limit) = &mut query.limit {
-            *limit = placeholder_value();
-        }
-        if let Some(Offset { value, .. }) = &mut query.offset {
-            *value = placeholder_value();
+        if let Some(limit_clause) = &mut query.limit_clause {
+            match limit_clause {
+                LimitClause::LimitOffset {
+                    limit,
+                    offset,
+                    limit_by,
+                } => {
+                    if let Some(limit_value) = limit {
+                        *limit_value = placeholder_value();
+                    }
+                    if let Some(Offset { value, .. }) = offset {
+                        *value = placeholder_value();
+                    }
+                    if !limit_by.is_empty() {
+                        *limit_by = vec![placeholder_value()];
+                    }
+                }
+                // MySQL specific, needs testing!Ó
+                LimitClause::OffsetCommaLimit { offset, limit } => {
+                    *offset = placeholder_value();
+                    *limit = placeholder_value();
+                }
+            }
         }
         ControlFlow::Continue(())
     }
@@ -462,6 +480,18 @@ mod tests {
     fn test_select_with_limit_offset() {
         let result = fingerprint_many(vec!["SELECT a FROM b LIMIT 21 OFFSET 101 ROWS"], None);
         assert_eq!(result, vec!["SELECT ... FROM b LIMIT ... OFFSET ... ROWS"]);
+    }
+
+    #[test]
+    fn test_clickhouse_select_with_limit_by() {
+        let result = fingerprint_many(vec!["SELECT a FROM b LIMIT 21 BY c"], None);
+        assert_eq!(result, vec!["SELECT ... FROM b LIMIT ... BY ..."]);
+    }
+
+    #[test]
+    fn test_mysql_select_with_limit_comma() {
+        let result = fingerprint_many(vec!["SELECT a FROM b LIMIT 21, 101"], None);
+        assert_eq!(result, vec!["SELECT ... FROM b LIMIT ..., ..."]);
     }
 
     #[test]
