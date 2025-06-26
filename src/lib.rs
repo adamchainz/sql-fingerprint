@@ -72,6 +72,61 @@ impl FingerprintingVisitor {
             savepoint_ids: HashMap::new(),
         }
     }
+
+    fn visit_select(&mut self, select: &mut sqlparser::ast::Select) {
+        if !select.projection.is_empty() {
+            if let Some(item) = select.projection.first_mut() {
+                match item {
+                    SelectItem::UnnamedExpr(_) | SelectItem::ExprWithAlias { .. } => {
+                        *item = SelectItem::UnnamedExpr(placeholder_value());
+                    }
+                    _ => {}
+                }
+            }
+            select.projection.truncate(1);
+        }
+
+        if let Some(Distinct::On(exprs)) = &mut select.distinct {
+            if !exprs.is_empty() {
+                *exprs = vec![placeholder_value()];
+            }
+        };
+
+        for table_with_joins in &mut select.from {
+            for join in &mut table_with_joins.joins {
+                match &mut join.join_operator {
+                    JoinOperator::Join(constraint)
+                    | JoinOperator::Inner(constraint)
+                    | JoinOperator::Left(constraint)
+                    | JoinOperator::LeftOuter(constraint)
+                    | JoinOperator::Right(constraint)
+                    | JoinOperator::RightOuter(constraint)
+                    | JoinOperator::FullOuter(constraint)
+                    | JoinOperator::Semi(constraint)
+                    | JoinOperator::LeftSemi(constraint)
+                    | JoinOperator::RightSemi(constraint)
+                    | JoinOperator::Anti(constraint)
+                    | JoinOperator::LeftAnti(constraint)
+                    | JoinOperator::RightAnti(constraint) => {
+                        if let JoinConstraint::On(expr) = constraint {
+                            *expr = placeholder_value();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if let Some(selection) = &mut select.selection {
+            *selection = placeholder_value();
+        }
+
+        if let GroupByExpr::Expressions(col_names, ..) = &mut select.group_by {
+            if !col_names.is_empty() {
+                *col_names = vec![placeholder_value()];
+            }
+        }
+    }
 }
 
 impl VisitorMut for FingerprintingVisitor {
@@ -197,59 +252,29 @@ impl VisitorMut for FingerprintingVisitor {
     }
 
     fn pre_visit_query(&mut self, query: &mut Query) -> ControlFlow<Self::Break> {
-        if let SetExpr::Select(select) = query.body.as_mut() {
-            if !select.projection.is_empty() {
-                if let Some(item) = select.projection.first_mut() {
-                    match item {
-                        SelectItem::UnnamedExpr(_) | SelectItem::ExprWithAlias { .. } => {
-                            *item = SelectItem::UnnamedExpr(placeholder_value());
-                        }
-                        _ => {}
-                    }
-                }
-                select.projection.truncate(1);
+        match query.body.as_mut() {
+            SetExpr::Select(select) => {
+                self.visit_select(select);
             }
-
-            if let Some(Distinct::On(exprs)) = &mut select.distinct {
-                if !exprs.is_empty() {
-                    *exprs = vec![placeholder_value()];
-                }
-            };
-
-            for table_with_joins in &mut select.from {
-                for join in &mut table_with_joins.joins {
-                    match &mut join.join_operator {
-                        JoinOperator::Join(constraint)
-                        | JoinOperator::Inner(constraint)
-                        | JoinOperator::Left(constraint)
-                        | JoinOperator::LeftOuter(constraint)
-                        | JoinOperator::Right(constraint)
-                        | JoinOperator::RightOuter(constraint)
-                        | JoinOperator::FullOuter(constraint)
-                        | JoinOperator::Semi(constraint)
-                        | JoinOperator::LeftSemi(constraint)
-                        | JoinOperator::RightSemi(constraint)
-                        | JoinOperator::Anti(constraint)
-                        | JoinOperator::LeftAnti(constraint)
-                        | JoinOperator::RightAnti(constraint) => {
-                            if let JoinConstraint::On(expr) = constraint {
-                                *expr = placeholder_value();
-                            }
+            SetExpr::SetOperation { left, right, .. } => {
+                // push left and right into a double-ended queue to visit them,
+                // expnading left and right as required.
+                let mut stack = vec![left.as_mut(), right.as_mut()];
+                while let Some(set_expr) = stack.pop() {
+                    match set_expr {
+                        SetExpr::Select(select) => {
+                            self.visit_select(select);
+                        }
+                        SetExpr::SetOperation { left, right, .. } => {
+                            // Push left and right onto the stack for further processing.
+                            stack.push(left.as_mut());
+                            stack.push(right.as_mut());
                         }
                         _ => {}
                     }
                 }
             }
-
-            if let Some(selection) = &mut select.selection {
-                *selection = placeholder_value();
-            }
-
-            if let GroupByExpr::Expressions(col_names, ..) = &mut select.group_by {
-                if !col_names.is_empty() {
-                    *col_names = vec![placeholder_value()];
-                }
-            }
+            _ => {}
         }
         if let Some(order_by) = &mut query.order_by {
             let OrderBy { kind, .. } = order_by;
@@ -496,6 +521,12 @@ mod tests {
 
     #[test]
     fn test_select_union() {
+        let result = fingerprint_many(vec!["SELECT a, b FROM c UNION SELECT a, b FROM d"], None);
+        assert_eq!(result, vec!["SELECT ... FROM c UNION SELECT ... FROM d"]);
+    }
+
+    #[test]
+    fn test_select_union_parenthesized() {
         let result = fingerprint_many(
             vec!["(SELECT a, b FROM c) UNION (SELECT a, b FROM d)"],
             None,
@@ -507,7 +538,37 @@ mod tests {
     }
 
     #[test]
+    fn test_select_union_all() {
+        let result = fingerprint_many(
+            vec!["SELECT a, b FROM c UNION ALL SELECT a, b FROM d"],
+            None,
+        );
+        assert_eq!(
+            result,
+            vec!["SELECT ... FROM c UNION ALL SELECT ... FROM d"]
+        );
+    }
+
+    #[test]
+    fn test_select_union_all_parenthesized() {
+        let result = fingerprint_many(
+            vec!["(SELECT a, b FROM c) UNION ALL (SELECT a, b FROM d)"],
+            None,
+        );
+        assert_eq!(
+            result,
+            vec!["(SELECT ... FROM c) UNION ALL (SELECT ... FROM d)"]
+        );
+    }
+
+    #[test]
     fn test_select_except() {
+        let result = fingerprint_many(vec!["SELECT a, b FROM c EXCEPT SELECT a, b FROM d"], None);
+        assert_eq!(result, vec!["SELECT ... FROM c EXCEPT SELECT ... FROM d"]);
+    }
+
+    #[test]
+    fn test_select_except_parenthesized() {
         let result = fingerprint_many(
             vec!["(SELECT a, b FROM c) EXCEPT (SELECT a, b FROM d)"],
             None,
@@ -517,8 +578,21 @@ mod tests {
             vec!["(SELECT ... FROM c) EXCEPT (SELECT ... FROM d)"]
         );
     }
+
     #[test]
     fn test_select_intersect() {
+        let result = fingerprint_many(
+            vec!["SELECT a, b FROM c INTERSECT SELECT a, b FROM d"],
+            None,
+        );
+        assert_eq!(
+            result,
+            vec!["SELECT ... FROM c INTERSECT SELECT ... FROM d"]
+        );
+    }
+
+    #[test]
+    fn test_select_intersect_parenthesized() {
         let result = fingerprint_many(
             vec!["(SELECT a, b FROM c) INTERSECT (SELECT a, b FROM d)"],
             None,
@@ -526,6 +600,55 @@ mod tests {
         assert_eq!(
             result,
             vec!["(SELECT ... FROM c) INTERSECT (SELECT ... FROM d)"]
+        );
+    }
+
+    #[test]
+    fn test_select_union_triple() {
+        let result = fingerprint_many(
+            vec!["SELECT a, b FROM c UNION SELECT a, b FROM d UNION SELECT a, b FROM e"],
+            None,
+        );
+        assert_eq!(
+            result,
+            vec!["SELECT ... FROM c UNION SELECT ... FROM d UNION SELECT ... FROM e"]
+        );
+    }
+
+    #[test]
+    fn test_select_union_triple_parenthesized() {
+        let result = fingerprint_many(
+            vec!["(SELECT a, b FROM c) UNION (SELECT a, b FROM d) UNION (SELECT a, b FROM e)"],
+            None,
+        );
+        assert_eq!(
+            result,
+            vec!["(SELECT ... FROM c) UNION (SELECT ... FROM d) UNION (SELECT ... FROM e)"]
+        );
+    }
+
+    #[test]
+    fn test_with_recursive_select() {
+        let result = fingerprint_many(
+            vec!["WITH RECURSIVE t AS (SELECT a, b FROM c WHERE d = 12345) SELECT * FROM t"],
+            None,
+        );
+        assert_eq!(
+            result,
+            vec!["WITH RECURSIVE t AS (SELECT ... FROM c WHERE ...) SELECT * FROM t"]
+        );
+    }
+
+    #[test]
+    fn test_with_recursive_select_union() {
+        let result = fingerprint_many(
+            vec!["WITH RECURSIVE t AS (SELECT a FROM b UNION SELECT a FROM c) SELECT * FROM t"],
+            None,
+        );
+
+        assert_eq!(
+            result,
+            vec!["WITH RECURSIVE t AS (SELECT ... FROM b UNION SELECT ... FROM c) SELECT * FROM t"],
         );
     }
 
