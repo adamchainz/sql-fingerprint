@@ -2,6 +2,10 @@
 Changelog
 =========
 
+* Upgrade sqlparser, including some bug fixes known to affect this package: `#1792 <https://github.com/apache/datafusion-sqlparser-rs/issues/1792>`__ and `#1815 <https://github.com/apache/datafusion-sqlparser-rs/pull/1815>`__.
+
+* Simplify expressions used in special ``LIMIT`` syntax used in Clickhouse and MySQL.
+
 1.5.0 (2025-04-28)
 ------------------
 
