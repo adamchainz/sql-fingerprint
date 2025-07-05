@@ -2,6 +2,13 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+* Elide contents of ``UNNEST(...)`` function calls in ``FROM`` clauses.
+
+  Thanks to Nick Pope for the suggestion in `Issue #25 <https://github.com/adamchainz/sql-fingerprint/issues/25>`__.
+
 1.7.0 (2025-06-26)
 ------------------
 
