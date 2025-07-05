@@ -4,7 +4,7 @@ use sqlparser::ast::{
     Assignment, AssignmentTarget, ConflictTarget, Delete, Distinct, DoUpdate, Expr, GroupByExpr,
     Ident, Insert, JoinConstraint, JoinOperator, LimitClause, ObjectName, ObjectNamePart, Offset,
     OnConflict, OnConflictAction, OnInsert, OrderBy, OrderByKind, Query, SelectItem, SetExpr,
-    Statement, Value, ValueWithSpan, VisitMut, VisitorMut,
+    Statement, TableAliasColumnDef, TableFactor, Value, ValueWithSpan, VisitMut, VisitorMut,
 };
 use sqlparser::dialect::{Dialect, GenericDialect};
 use sqlparser::parser::Parser;
@@ -320,6 +320,29 @@ impl VisitorMut for FingerprintingVisitor {
                 ObjectNamePart::Identifier(ident) => {
                     maybe_unquote_ident(ident);
                 }
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_table_factor(
+        &mut self,
+        table_factor: &mut TableFactor,
+    ) -> ControlFlow<Self::Break> {
+        if let TableFactor::UNNEST {
+            alias, array_exprs, ..
+        } = table_factor
+        {
+            if let Some(alias) = alias {
+                if !alias.columns.is_empty() {
+                    alias.columns = vec![TableAliasColumnDef {
+                        name: Ident::new("..."),
+                        data_type: None,
+                    }];
+                }
+            }
+            if !array_exprs.is_empty() {
+                *array_exprs = vec![placeholder_value()];
             }
         }
         ControlFlow::Continue(())
@@ -711,5 +734,36 @@ mod tests {
     fn test_delete() {
         let result = fingerprint_many(vec!["DELETE FROM a WHERE b = 1 RETURNING c"], None);
         assert_eq!(result, vec!["DELETE FROM a WHERE ... RETURNING ..."]);
+    }
+
+    #[test]
+    fn test_insert_select_unnest() {
+        let result = fingerprint_many(
+            vec![
+                "INSERT INTO my_table (col1, col2) SELECT * FROM UNNEST(ARRAY[1,2,3,4,5]) ON CONFLICT(col1) DO UPDATE SET col2 = EXCLUDED.col2",
+            ],
+            None,
+        );
+        assert_eq!(
+            result,
+            vec![
+                "INSERT INTO my_table (...) SELECT * FROM UNNEST(...) ON CONFLICT(...) DO UPDATE SET ... = ..."
+            ]
+        );
+    }
+
+    #[test]
+    fn test_select_from_unnest() {
+        let result = fingerprint_many(vec!["SELECT * FROM UNNEST(ARRAY[1,2,3,4,5])"], None);
+        assert_eq!(result, vec!["SELECT * FROM UNNEST(...)"]);
+    }
+
+    #[test]
+    fn test_select_from_unnest_with_alias() {
+        let result = fingerprint_many(
+            vec!["SELECT * FROM UNNEST(ARRAY[1,2,3,4,5]) AS t (value)"],
+            None,
+        );
+        assert_eq!(result, vec!["SELECT * FROM UNNEST(...) AS t (...)"]);
     }
 }
