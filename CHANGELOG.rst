@@ -2,8 +2,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+1.8.0 (2025-07-05)
+------------------
 
 * Elide contents of ``UNNEST(...)`` function calls in ``FROM`` clauses.
 
