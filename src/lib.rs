@@ -316,10 +316,8 @@ impl VisitorMut for FingerprintingVisitor {
 
     fn pre_visit_relation(&mut self, _relation: &mut ObjectName) -> ControlFlow<Self::Break> {
         for part in _relation.0.iter_mut() {
-            match part {
-                ObjectNamePart::Identifier(ident) => {
-                    maybe_unquote_ident(ident);
-                }
+            if let ObjectNamePart::Identifier(ident) = part {
+                maybe_unquote_ident(ident);
             }
         }
         ControlFlow::Continue(())
