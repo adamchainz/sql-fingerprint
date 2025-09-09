@@ -2,11 +2,6 @@
 Changelog
 =========
 
-1.10.0 (2025-09-09)
--------------------
-
-* Upgrade sqlparser to Git install of commit `b8539a52af7419b86d9c2fc51ba247d022f7a6f8 <https://github.com/apache/datafusion-sqlparser-rs/commit/b8539a52af7419b86d9c2fc51ba247d022f7a6f8>`__, including a bug fix known to affect this package: `PR #2001 <https://github.com/apache/datafusion-sqlparser-rs/pull/2001>`__.
-
 1.9.0 (2025-07-31)
 ------------------
 

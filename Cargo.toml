@@ -1,6 +1,6 @@
 [package]
 name = "sql-fingerprint"
-version = "1.10.0"
+version = "1.9.0"
 edition = "2024"
 license = "MIT"
 description = "A SQL fingerprinter."
@@ -11,4 +11,4 @@ include = [
 ]
 
 [dependencies]
-sqlparser = { git = "https://github.com/apache/datafusion-sqlparser-rs", features = ["visitor"] }
+sqlparser = { version = ">= 0.55.0", features = ["visitor"] }
