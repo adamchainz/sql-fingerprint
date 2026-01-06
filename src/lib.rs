@@ -4,7 +4,8 @@ use sqlparser::ast::{
     Assignment, AssignmentTarget, ConflictTarget, Delete, Distinct, DoUpdate, Expr, GroupByExpr,
     Ident, Insert, JoinConstraint, JoinOperator, LimitClause, ObjectName, ObjectNamePart, Offset,
     OnConflict, OnConflictAction, OnInsert, OrderBy, OrderByKind, Query, SelectItem, SetExpr,
-    Statement, TableAliasColumnDef, TableFactor, Value, ValueWithSpan, VisitMut, VisitorMut,
+    Statement, TableAliasColumnDef, TableFactor, Update, Value, ValueWithSpan, VisitMut,
+    VisitorMut,
 };
 use sqlparser::dialect::{Dialect, GenericDialect};
 use sqlparser::parser::Parser;
@@ -209,12 +210,12 @@ impl VisitorMut for FingerprintingVisitor {
                     }
                 }
             }
-            Statement::Update {
+            Statement::Update(Update {
                 assignments,
                 selection,
                 returning,
                 ..
-            } => {
+            }) => {
                 if !assignments.is_empty() {
                     *assignments = vec![sqlparser::ast::Assignment {
                         target: AssignmentTarget::ColumnName(ObjectName(vec![
