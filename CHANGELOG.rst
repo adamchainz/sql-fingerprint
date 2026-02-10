@@ -2,6 +2,8 @@
 Changelog
 =========
 
+* Upgrade sqlparser to version 0.61.0, including a bug fix known to affect this package: `#2000 <https://github.com/apache/datafusion-sqlparser-rs/pull/2000>`__.
+
 1.9.0 (2025-07-31)
 ------------------
 
