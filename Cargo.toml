@@ -11,4 +11,4 @@ include = [
 ]
 
 [dependencies]
-sqlparser = { version = ">= 0.55.0", features = ["visitor"] }
+sqlparser = { version = ">= 0.61.0", features = ["visitor"] }
