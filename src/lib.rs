@@ -87,10 +87,10 @@ impl FingerprintingVisitor {
             select.projection.truncate(1);
         }
 
-        if let Some(Distinct::On(exprs)) = &mut select.distinct {
-            if !exprs.is_empty() {
-                *exprs = vec![placeholder_value()];
-            }
+        if let Some(Distinct::On(exprs)) = &mut select.distinct
+            && !exprs.is_empty()
+        {
+            *exprs = vec![placeholder_value()];
         };
 
         for table_with_joins in &mut select.from {
@@ -122,10 +122,10 @@ impl FingerprintingVisitor {
             *selection = placeholder_value();
         }
 
-        if let GroupByExpr::Expressions(col_names, ..) = &mut select.group_by {
-            if !col_names.is_empty() {
-                *col_names = vec![placeholder_value()];
-            }
+        if let GroupByExpr::Expressions(col_names, ..) = &mut select.group_by
+            && !col_names.is_empty()
+        {
+            *col_names = vec![placeholder_value()];
         }
     }
 }
@@ -171,20 +171,20 @@ impl VisitorMut for FingerprintingVisitor {
                 if !columns.is_empty() {
                     *columns = vec![Ident::new("...")];
                 }
-                if let Some(source) = source {
-                    if let SetExpr::Values(values) = source.as_mut().body.as_mut() {
-                        values.rows = vec![vec![placeholder_value()]];
-                    }
+                if let Some(source) = source
+                    && let SetExpr::Values(values) = source.as_mut().body.as_mut()
+                {
+                    values.rows = vec![vec![placeholder_value()]];
                 }
                 if let Some(OnInsert::OnConflict(OnConflict {
                     conflict_target,
                     action,
                 })) = on
                 {
-                    if let Some(ConflictTarget::Columns(columns)) = conflict_target {
-                        if !columns.is_empty() {
-                            *columns = vec![Ident::new("...")];
-                        }
+                    if let Some(ConflictTarget::Columns(columns)) = conflict_target
+                        && !columns.is_empty()
+                    {
+                        *columns = vec![Ident::new("...")];
                     }
                     if let OnConflictAction::DoUpdate(DoUpdate {
                         assignments,
@@ -204,10 +204,10 @@ impl VisitorMut for FingerprintingVisitor {
                         }
                     }
                 }
-                if let Some(returning) = returning {
-                    if !returning.is_empty() {
-                        *returning = vec![SelectItem::UnnamedExpr(placeholder_value())];
-                    }
+                if let Some(returning) = returning
+                    && !returning.is_empty()
+                {
+                    *returning = vec![SelectItem::UnnamedExpr(placeholder_value())];
                 }
             }
             Statement::Update(Update {
@@ -227,10 +227,10 @@ impl VisitorMut for FingerprintingVisitor {
                 if let Some(selection) = selection {
                     *selection = placeholder_value();
                 }
-                if let Some(returning) = returning {
-                    if !returning.is_empty() {
-                        *returning = vec![SelectItem::UnnamedExpr(placeholder_value())];
-                    }
+                if let Some(returning) = returning
+                    && !returning.is_empty()
+                {
+                    *returning = vec![SelectItem::UnnamedExpr(placeholder_value())];
                 }
             }
             Statement::Delete(Delete {
@@ -241,10 +241,10 @@ impl VisitorMut for FingerprintingVisitor {
                 if let Some(selection) = selection {
                     *selection = placeholder_value();
                 }
-                if let Some(returning) = returning {
-                    if !returning.is_empty() {
-                        *returning = vec![SelectItem::UnnamedExpr(placeholder_value())];
-                    }
+                if let Some(returning) = returning
+                    && !returning.is_empty()
+                {
+                    *returning = vec![SelectItem::UnnamedExpr(placeholder_value())];
                 }
             }
             _ => {}
@@ -279,13 +279,13 @@ impl VisitorMut for FingerprintingVisitor {
         }
         if let Some(order_by) = &mut query.order_by {
             let OrderBy { kind, .. } = order_by;
-            if let OrderByKind::Expressions(expressions) = kind {
-                if !expressions.is_empty() {
-                    if let Some(expr) = expressions.first_mut() {
-                        expr.expr = placeholder_value();
-                    }
-                    expressions.truncate(1);
+            if let OrderByKind::Expressions(expressions) = kind
+                && !expressions.is_empty()
+            {
+                if let Some(expr) = expressions.first_mut() {
+                    expr.expr = placeholder_value();
                 }
+                expressions.truncate(1);
             }
         }
         if let Some(limit_clause) = &mut query.limit_clause {
@@ -332,13 +332,13 @@ impl VisitorMut for FingerprintingVisitor {
             alias, array_exprs, ..
         } = table_factor
         {
-            if let Some(alias) = alias {
-                if !alias.columns.is_empty() {
-                    alias.columns = vec![TableAliasColumnDef {
-                        name: Ident::new("..."),
-                        data_type: None,
-                    }];
-                }
+            if let Some(alias) = alias
+                && !alias.columns.is_empty()
+            {
+                alias.columns = vec![TableAliasColumnDef {
+                    name: Ident::new("..."),
+                    data_type: None,
+                }];
             }
             if !array_exprs.is_empty() {
                 *array_exprs = vec![placeholder_value()];
