@@ -2,6 +2,10 @@
 Changelog
 =========
 
+* Build with frame pointers enabled, preparation for `PEP 831 <https://peps.python.org/pep-0831/>`__.
+
+  `PR #53 <https://github.com/adamchainz/sql-fingerprint/issues/53>`__.
+
 1.10.0 (2026-02-10)
 -------------------
 
