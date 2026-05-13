@@ -2,6 +2,8 @@
 Changelog
 =========
 
+* Upgrade sqlparser to version 0.62.0 (`changelog <https://github.com/apache/datafusion-sqlparser-rs/blob/main/changelog/0.62.0.md>`__).
+
 1.10.0 (2026-02-10)
 -------------------
 
