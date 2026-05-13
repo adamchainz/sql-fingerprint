@@ -2,6 +2,8 @@
 Changelog
 =========
 
+* Correctly declare sqlparser minimum version as 0.62.0.
+
 1.11.0 (2026-05-13)
 -------------------
 
