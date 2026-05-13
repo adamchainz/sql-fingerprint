@@ -3,8 +3,8 @@
 use sqlparser::ast::{
     Assignment, AssignmentTarget, ConflictTarget, Delete, Distinct, DoUpdate, Expr, GroupByExpr,
     Ident, Insert, JoinConstraint, JoinOperator, LimitClause, ObjectName, ObjectNamePart, Offset,
-    OnConflict, OnConflictAction, OnInsert, OrderBy, OrderByKind, Query, SelectItem, SetExpr,
-    Statement, TableAliasColumnDef, TableFactor, Update, Value, ValueWithSpan, VisitMut,
+    OnConflict, OnConflictAction, OnInsert, OrderBy, OrderByKind, Parens, Query, SelectItem,
+    SetExpr, Statement, TableAliasColumnDef, TableFactor, Update, Value, ValueWithSpan, VisitMut,
     VisitorMut,
 };
 use sqlparser::dialect::{Dialect, GenericDialect};
@@ -169,12 +169,12 @@ impl VisitorMut for FingerprintingVisitor {
                 ..
             }) => {
                 if !columns.is_empty() {
-                    *columns = vec![Ident::new("...")];
+                    *columns = vec![Ident::new("...").into()];
                 }
                 if let Some(source) = source
                     && let SetExpr::Values(values) = source.as_mut().body.as_mut()
                 {
-                    values.rows = vec![vec![placeholder_value()]];
+                    values.rows = vec![Parens::with_empty_span(vec![placeholder_value()])];
                 }
                 if let Some(OnInsert::OnConflict(OnConflict {
                     conflict_target,
