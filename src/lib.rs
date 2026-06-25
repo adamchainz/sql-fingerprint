@@ -383,6 +383,7 @@ fn maybe_unquote_ident(ident: &mut Ident) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlparser::dialect::{MySqlDialect, PostgreSqlDialect};
 
     #[test]
     fn test_fingerprint_one() {
@@ -765,4 +766,34 @@ mod tests {
         );
         assert_eq!(result, vec!["SELECT * FROM UNNEST(...) AS t (...)"]);
     }
+
+    // Dialect-specific tests
+
+    #[test]
+    fn test_mysql_backtick_identifiers() {
+        let result = fingerprint_many(
+            vec!["SELECT `a`, `b` FROM `my_table` WHERE `id` = 1"],
+            Some(&MySqlDialect {}),
+        );
+        assert_eq!(result, vec!["SELECT ... FROM my_table WHERE ..."]);
+    }
+
+    #[test]
+    fn test_mysql_limit_offset_comma() {
+        let result = fingerprint_many(
+            vec!["SELECT a FROM b LIMIT 10, 20"],
+            Some(&MySqlDialect {}),
+        );
+        assert_eq!(result, vec!["SELECT ... FROM b LIMIT ..., ..."]);
+    }
+
+    #[test]
+    fn test_postgresql_select() {
+        let result = fingerprint_many(
+            vec!["SELECT a FROM b WHERE c ILIKE 'd%'"],
+            Some(&PostgreSqlDialect {}),
+        );
+        assert_eq!(result, vec!["SELECT ... FROM b WHERE ..."]);
+    }
+
 }
