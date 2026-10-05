@@ -20,7 +20,7 @@ repos:
   - id: end-of-file-fixer
   - id: trailing-whitespace
 - repo: https://github.com/crate-ci/typos
-  rev: c132f8b9e3ac7f8f0625490b1cb5b906d1d6a63a  # frozen: v1
+  rev: dd369349b73c245acd4dd4154a4bdf771d052150  # frozen: typos-dict-v0.14.2
   hooks:
   - id: typos
 - repo: https://github.com/rstcheck/rstcheck
